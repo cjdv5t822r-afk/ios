@@ -1,0 +1,119 @@
+# XcodeGen project description (https://github.com/yonaskolb/XcodeGen, written against the 2.46 project spec).
+# Generate the Xcode project on a Mac with:   cd ios && xcodegen generate
+# MonastyrAR.xcodeproj and MonastyrAR/Info.plist are generated files; edit this file instead of them.
+
+name: MonastyrAR
+
+options:
+  bundleIdPrefix: farm.monastyr2
+  developmentLanguage: pl
+  createIntermediateGroups: true
+  deploymentTarget:
+    # iOS 18 is the first release with RealityKit's MeshResource.Skeleton / joint influences, which is how a
+    # skinned GLB gets into RealityKit at run time (GLTFKit2 builds skins only on iOS 18+).
+    iOS: "18.0"
+
+packages:
+  # Platform-independent logic of the app, with its own unit tests (swift test).
+  StageCore:
+    path: StageCore
+  # glTF 2.0 loader with a RealityKit converter. Binary Swift package (xcframework + checksum in its Package.swift).
+  GLTFKit2:
+    url: https://github.com/warrenm/GLTFKit2
+    exactVersion: 0.5.15
+  # Zip reading for imported character packs.
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    exactVersion: 0.9.20
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Swift 5 language mode on purpose: the sources were written without a compiler at hand, and the Swift 6 mode
+    # turns every data-race diagnostic into an error.
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  MonastyrAR:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: MonastyrAR
+      # The shared content of both apps, referenced where it lives (blue folder references, nothing is copied into
+      # ios/): the bundle gets branding/logo.webp.
+      #
+      # No character pack is bundled, and nothing of ../content/characters goes into the app: characters are
+      # downloaded from the pack server (PacksBaseURL below) or imported from a file.
+      - path: ../content/branding
+        type: folder
+        buildPhase: resources
+      # The four built-in backing tracks and their list: the bundle gets music/music.json and music/*.wav.
+      - path: ../content/music
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: StageCore
+      - package: GLTFKit2
+      - package: ZIPFoundation
+    info:
+      path: MonastyrAR/Info.plist
+      properties:
+        CFBundleDisplayName: "Monastyr AR"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: pl
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - arm64
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        # Shows the app's Documents folder in the Files app, so a pack folder can also be dropped into
+        # "Na moim iPhonie / Monastyr AR / characters" by hand.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        ITSAppUsesNonExemptEncryption: false
+        # The pack server: <PacksBaseURL>/catalog.json and <PacksBaseURL>/characters/<id>/<file>. This is the one
+        # place the address is kept; the app reads it at start (PackServer.swift). For a local test server pass the
+        # launch argument  -PacksBaseURL http://<address>:<port>  instead of editing this.
+        PacksBaseURL: "https://mon2farma.fra1.digitaloceanspaces.com/monastyr2ar"
+        # Plain HTTP only for local addresses (a developer's tools/serve-packs.mjs on localhost or the LAN).
+        # NSAllowsArbitraryLoads is deliberately not set: everything else stays HTTPS only.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # Shown only if a developer points the app at a test server on the local network (-PacksBaseURL).
+        NSLocalNetworkUsageDescription: "Aplikacja łączy się z siecią lokalną tylko wtedy, gdy biblioteka postaci jest ustawiona na serwer testowy w tej sieci."
+        NSCameraUsageDescription: "Tryb AR pokazuje obraz z aparatu, aby postawić postać w Twoim otoczeniu. Obraz zostaje na telefonie."
+        NSMicrophoneUsageDescription: "Mikrofon nagrywa dźwięk z otoczenia razem z filmem, gdy włączysz tę opcję w ustawieniach."
+        NSPhotoLibraryAddUsageDescription: "Aplikacja zapisuje nagrane filmy i zdjęcia w Twojej bibliotece zdjęć."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: farm.monastyr2.ar
+        PRODUCT_NAME: MonastyrAR
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: false
+        # Signing: leave the team empty here and pick it in Xcode (Signing & Capabilities), or pass
+        # DEVELOPMENT_TEAM=XXXXXXXXXX to xcodebuild. The CI build is unsigned.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+
+# A shared scheme, so `xcodebuild -scheme MonastyrAR` works on a fresh checkout (CI) without opening Xcode first.
+schemes:
+  MonastyrAR:
+    build:
+      targets:
+        MonastyrAR: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+# The unit tests live in the StageCore package: run them with `swift test` in ios/StageCore (no simulator needed).
